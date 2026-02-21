@@ -1,0 +1,63 @@
+name: Test Installation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - 'install.sh'
+      - 'install.ps1'
+      - '.github/workflows/test-install.yml'
+
+jobs:
+  test-linux-x86:
+    name: Test Linux x86_64 Installation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and run install script
+        run: curl -sSf https://raw.githubusercontent.com/ozx1/cue/master/install.sh | sudo sh
+
+      - name: Verify cue is installed
+        run: |
+          which cue
+          cue -h
+
+  test-linux-arm64:
+    name: Test Linux ARM64 Installation
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Download and run install script
+        run: curl -sSf https://raw.githubusercontent.com/ozx1/cue/master/install.sh | sudo sh
+
+      - name: Verify cue is installed
+        run: |
+          which cue
+          cue -h
+
+  test-macos:
+    name: Test macOS Installation (ARM64)
+    runs-on: macos-latest
+    steps:
+      - name: Download and run install script
+        run: curl -sSf https://raw.githubusercontent.com/ozx1/cue/master/install.sh | sh
+
+      - name: Verify cue is installed
+        run: |
+          which cue
+          cue -h
+
+  test-windows:
+    name: Test Windows Installation
+    runs-on: windows-latest
+    steps:
+      - name: Download and run install script
+        shell: powershell
+        run: iwr https://raw.githubusercontent.com/ozx1/cue/master/install.ps1 -UseBasicParsing | iex
+
+      - name: Verify cue is installed
+        shell: powershell
+        run: |
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          Get-Command cue -ErrorAction Stop
+          cue -h
