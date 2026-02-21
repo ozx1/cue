@@ -1,0 +1,11 @@
+[package]
+name = "cue"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.60", features = ["derive"] }
+clearscreen = "4.0.3"
+notify = "8.2.0"
+which = "8.0.0"
+
