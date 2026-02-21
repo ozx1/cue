@@ -1,6 +1,6 @@
 use clap::Parser;
 use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
-use std::{io, path::Path, process::{self, Command}, sync::mpsc};
+use std::{path::Path, process::{self, Command}, sync::mpsc};
 
 #[derive(Parser)]
 #[command(
@@ -64,7 +64,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for event in rx {
         match event {
-            Ok(_) => {
+            Ok(e) => {
+                println!("{} changed",e.paths[0].display());
                 Command::new(&command.cmd)
                     .args(&command.args)
                     .spawn()
