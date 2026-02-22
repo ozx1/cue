@@ -7,8 +7,12 @@ edition = "2024"
 clap = { version = "4.5.60", features = ["derive"] }
 clearscreen = "4.0.3"
 colored = "3.1.1"
+confy = "2.0.0"
 dunce = "1.0.5"
 notify = "8.2.0"
+serde = { version = "1.0.228", features = ["derive"] }
+shell-words = "1.1.1"
 terminal_size = "0.4.3"
 which = "8.0.0"
+
 
