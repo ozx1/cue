@@ -1,15 +1,16 @@
+use chrono::Utc;
 use clap::{Parser, Subcommand};
 use colored::*;
 use notify::{Event, EventKind, RecursiveMode, Watcher, recommended_watcher};
 use serde::{Deserialize, Serialize};
 use shell_words::split;
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use terminal_size::{Width, terminal_size};
-use chrono::Utc;
 
 const CUE: &str = "[cue]";
 const DEBOUNCE_MS: u64 = 150;
@@ -63,6 +64,8 @@ enum Commands {
         run: Option<String>,
         #[arg(long, short, default_value_t = DEBOUNCE_MS)]
         debounce: u64,
+        #[arg(long, short)]
+        global: bool
     },
 }
 
@@ -247,8 +250,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             watch,
             run,
             debounce,
+            global
         }) => {
-            let config: CueConfig = confy::load("cue", None)?;
+            let config: CueConfig = if Path::new("cue.toml").exists() && !global {
+                println!(
+                    "{} found 'cue.toml' — loading tasks from it", CUE.green()
+                );
+                let content = fs::read_to_string("cue.toml").unwrap_or_else(|_| {
+                    eprintln!("{} failed to read cue.toml", "Error:".red());
+                    process::exit(1);
+                });
+
+                toml::from_str(&content).unwrap_or_else(|e| {
+                    eprintln!("{} invalid cue.toml: {}", "Error:".red(), e);
+                    process::exit(1);
+                })
+            } else {
+                println!(
+                    "{} loading global tasks", CUE.green()
+                );
+                confy::load("cue", None)?
+            };
 
             let task = config.tasks.get(&name).cloned().unwrap_or_else(|| {
                 eprintln!("{} task '{}' not found", "Error:".red(), name);
@@ -280,7 +302,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             validate_paths(&paths);
             validate_command(&command);
-            start_watcher(paths, command, &run_str, DEBOUNCE_MS)?;
+            start_watcher(paths, command, &run_str, args.debounce)?;
         }
     }
 

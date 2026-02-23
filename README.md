@@ -1,11 +1,19 @@
 # cue
 
-> Automate your workflow — watch files, run commands, stay in flow.
-
-cue watches your files and automatically runs a command every time you save. Save tasks as shortcuts so you never have to type the same command twice.
+cue is a lightweight CLI tool that watches your files and automatically runs a command every time you save. No config needed to get started.
 
 ---
 
+## Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Watch Mode](#watch-mode)
+- [Tasks](#tasks)
+- [Local Project Config](#local-project-config)
+- [Debounce](#debounce)
+
+---
 
 ## Installation
 
@@ -26,109 +34,166 @@ cargo install --path .
 
 ---
 
-## Usage
+## Quick Start
 
-### Watch mode
+```bash
+cue -w src -r "cargo run"
+```
+
+That's it. Every time you save a file inside `src`, cue runs `cargo run`.
+
+---
+
+## Watch Mode
+
+Watch one or more files or directories and run a command on every save.
 
 ```bash
 cue -w <files or dirs> -r "<command>"
 ```
 
-| Flag | Description |
-|------|-------------|
-| `-w` | One or more files or directories to watch |
-| `-r` | The command to run when a change is detected |
-| `--debounce` | Milliseconds to wait before running (default: 150) |
-
-> **Note:** Always wrap your command in quotes so its flags go to your command, not to cue.
-
-### Examples
-
+**Examples**
 ```bash
+# Watch a directory
 cue -w src -r "cargo run"
+
+# Watch multiple directories
 cue -w src tests -r "cargo test"
-cue -w ./app -r "go run . --port 8080"
+
+# Watch a single file
+cue -w main.go -r "go run main.go"
 ```
+
+> **Tip:** Always wrap your command in quotes so its flags go to your command, not to cue.
+
+**Flags**
+
+| Flag | Short | Description | Default |
+|------|-------|-------------|---------|
+| `--watch` | `-w` | Files or directories to watch | — |
+| `--run` | `-r` | Command to run on change | — |
+| `--debounce` | `-d` | Milliseconds to wait before running | `150` |
 
 ---
 
-### Debounce
+## Tasks
 
-When you save a file, your editor often writes to disk multiple times in rapid succession. Without debounce, cue would run your command 3–5 times per save.
+Save a watch + command pair as a named task so you can run it with a single word. Tasks are saved globally on your machine and available from any directory.
 
-cue waits **150ms** by default after the last detected change before running your command — so you always get exactly one run per save.
-
-You can tune this with `--debounce`:
-
+### Add a task
 ```bash
-# Wait 500ms before running (useful for slow editors or heavy builds)
-cue -w src -r "cargo build" --debounce 500
-
-# React faster (useful for simple scripts)
-cue -w src -r "echo changed" --debounce 50
-```
-
----
-
-### Tasks
-
-Save a command as a task so you can run it with a single word:
-
-```bash
-# Save a task
 cue task add <name> -w <files or dirs> -r "<command>"
+```
 
-# Run it
+### Run a task
+```bash
 cue run <name>
+```
 
-# List all saved tasks
+### List all tasks
+```bash
 cue task list
+```
 
-# Remove a task
+### Remove a task
+```bash
 cue task remove <name>
 ```
 
-Tasks are saved **globally** on your machine so they're available from any directory.
-
-#### Examples
-
+### Examples
 ```bash
+# Save tasks
 cue task add build -w src -r "cargo build --release"
 cue task add test -w src tests -r "cargo test"
 
+# Run them
 cue run build
 cue run test
 ```
 
-#### Override a task on the fly
+### Override a task
 
-You can run a saved task with different paths or a different command without editing it:
+Run a saved task with a different path or command without editing it:
 
 ```bash
-# Use a different path
+# Different path
 cue run build -w src/main.rs
 
-# Use a different command
+# Different command
 cue run build -r "cargo build"
+```
+
+**Flags**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--watch` | `-w` | Override the task's watch paths |
+| `--run` | `-r` | Override the task's command |
+| `--debounce` | `-d` | Set the debounce value (ms) |
+| `--global` | `-g` | Force using global tasks instead of `cue.toml` in the working directory |
+
+---
+
+## Local Project Config
+
+By default, `cue run` looks for a `cue.toml` file in your current directory. If found, tasks are loaded from it instead of your global tasks. This lets you commit your cue setup alongside your project so your whole team can use the same commands.
+
+### cue.toml format
+
+```toml
+[tasks.build]
+watch = ["src"]
+run = "cargo build --release"
+
+[tasks.test]
+watch = ["src", "tests"]
+run = "cargo test"
+```
+
+### How it works
+
+- If `cue.toml` exists in the current directory tasks load from it
+- If not tasks load from global config
+- Use `--global` / `-g` to force global tasks even when a `cue.toml` exists
+
+```bash
+# Uses cue.toml if present (default)
+cue run build
+
+# Forces global tasks
+cue run build --global
 ```
 
 ---
 
-## How it works
+## Debounce
 
-1. cue starts watching all the paths you provide
-2. When a file is saved, cue waits for your editor to finish writing (debounce)
-3. cue runs your command — if a previous run is still going, it kills it first
-4. You always get the latest version running without any manual intervention
+When you save a file, your editor often writes to disk multiple times in quick succession. Without debounce, cue would run your command 3–5 times per save.
+
+cue waits **150ms** after the last detected change before running — so you always get exactly one run per save.
+
+change it with `--debounce` / `-d`:
+
+```bash
+cue -w src -r "cargo build" -d 500
+```
 
 ---
+
+## How It Works
+
+1. cue starts watching all the paths you provide
+2. A file is saved — cue waits for the debounce window to pass
+3. If the previous run is still going, cue kills it
+4. cue runs your command fresh
+
+
 
 ## Contributing
 
 Found a bug or have an idea? Open an issue or submit a pull request — contributions are welcome.
 
----
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT — [LICENSE](LICENSE)
