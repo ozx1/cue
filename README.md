@@ -2,6 +2,7 @@
 
 cue is a lightweight CLI tool that watches your files and automatically runs a command every time you save. No config needed to get started.
 
+> **Note:** cue is still under active development — usable, but bugs may occur and features may change.
 ---
 
 ## Contents
@@ -69,11 +70,13 @@ cue -w main.go -r "go run main.go"
 
 **Flags**
 
-| Flag | Short | Description | Default |
-|------|-------|-------------|---------|
-| `--watch` | `-w` | Files or directories to watch | — |
-| `--run` | `-r` | Command to run on change | — |
-| `--debounce` | `-d` | Milliseconds to wait before running | `150` |
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--watch` | `-w` | Files or directories to watch |
+| `--run` | `-r` | Command to run on change 
+| `--debounce` | `-d` | Set the [Debounce](#debounce) value (ms) |
+|`--quite`|`-q`|Enables quite mode|
+|`--no-clear`| - |Disables clearing the screen after every run | 
 
 ---
 
@@ -94,6 +97,13 @@ cue run <name>
 ### List all tasks
 ```bash
 cue task list
+```
+
+### Edit a task 
+```bash
+cue task edit <name> -w <files or dirs>
+cue task edit <name> -r "<command>"
+cue task edit <name> -w <files or dirs> -r "<command>"
 ```
 
 ### Remove a task
@@ -130,14 +140,23 @@ cue run build -r "cargo build"
 |------|-------|-------------|
 | `--watch` | `-w` | Override the task's watch paths |
 | `--run` | `-r` | Override the task's command |
-| `--debounce` | `-d` | Set the debounce value (ms) |
+| `--debounce` | `-d` | Set the [Debounce](#debounce) value (ms) |
 | `--global` | `-g` | Force using global tasks instead of `cue.toml` in the working directory |
+|`--quite`|`-q`|Enables quite mode (only when running tasks)|
+|`--no-clear`| - |Disables clearing the screen after every run | 
+
 
 ---
 
 ## Local Project Config
 
 By default, `cue run` looks for a `cue.toml` file in your current directory. If found, tasks are loaded from it instead of your global tasks. This lets you commit your cue setup alongside your project so your whole team can use the same commands.
+
+You can use `cue init` to create a cue.toml
+
+```bash
+cue init
+```
 
 ### cue.toml format
 
@@ -179,11 +198,27 @@ change it with `--debounce` / `-d`:
 cue -w src -r "cargo build" -d 500
 ```
 ---
+## Quite mode 
+
+Quite mode stops cue logs from appearing and just run the command when using `cue`, `cue run`, `cue run <taskname>` or `cue -w <files or dirs> -r "<command>"`
+
+also quite mode doesn't stop errors or logs from `task` add, remove, edit or list
+
+enable it with `--quite` / `-q`
+
+```
+cue -q
+cue run -q
+cue run my_task
+cue -w src -r "cargo run" -q
+```
+
 ## Zero-Config Mode
 
-You can run `cue` with no flags
+You can run `cue` or `cue run` with no flags
 ```bash
 cue
+cue run
 ```
 
 If a `cue.toml` exists in your current directory, cue loads it
@@ -226,6 +261,7 @@ cue --global
 ## Contributing
 
 Found a bug or have an idea? Open an issue or submit a pull request — contributions are welcome.
+
 
 
 ## License
