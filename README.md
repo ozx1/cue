@@ -2,7 +2,7 @@
 
 cue is a lightweight CLI tool that watches your files and automatically runs a command every time you save. No config needed to get started.
 
-> **Note:** cue is still under active development — usable, but bugs may occur and features may change.
+> **Note:** cue is still under active development — usable and tested ,but features may change.
 ---
 
 ## Contents

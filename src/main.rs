@@ -55,7 +55,7 @@ struct Cli {
     #[arg(long, short)]
     global: bool,
     #[arg(long)]
-    quite: bool,
+    quiet: bool,
     #[arg(long, short)]
     no_clear: bool,
 }
@@ -77,7 +77,7 @@ enum Commands {
         #[arg(long, short)]
         global: bool,
         #[arg(long, short)]
-        quite: bool,
+        quiet: bool,
         #[arg(long, short)]
         no_clear: bool,
     },
@@ -145,25 +145,25 @@ fn load_config(from_global: bool) -> CueConfig {
     }
 }
 
-fn resolve_config(global: bool, quite: bool) -> CueConfig {
+fn resolve_config(global: bool, quiet: bool) -> CueConfig {
     if global {
-        log!(quite, "{} loading global tasks", CUE.green());
+        log!(quiet, "{} loading global tasks", CUE.green());
         load_config(true)
     } else if Path::new("cue.toml").exists() {
-        log!(quite, "{} loading tasks from 'cue.toml'", CUE.green());
+        log!(quiet, "{} loading tasks from 'cue.toml'", CUE.green());
         load_config(false)
     } else {
-        log!(quite, "{} loading global tasks", CUE.green());
+        log!(quiet, "{} loading global tasks", CUE.green());
         load_config(true)
     }
 }
 
-fn pick_task(config: &CueConfig, name: Option<String>, quite: bool) -> String {
+fn pick_task(config: &CueConfig, name: Option<String>, quiet: bool) -> String {
     if let Some(n) = name {
         return n;
     }
     if let Some(d) = &config.default {
-        log!(quite, "{} default task '{}' — running it", CUE.green(), d);
+        log!(quiet, "{} default task '{}' — running it", CUE.green(), d);
         return d.clone();
     }
     let tasks: Vec<&String> = config.tasks.keys().collect();
@@ -178,12 +178,12 @@ fn pick_task(config: &CueConfig, name: Option<String>, quite: bool) -> String {
     tasks[choice].to_string()
 }
 
-fn validate_paths(paths: &[&Path], quite: bool) {
-    log!(quite, "{} checking paths...", CUE.green());
+fn validate_paths(paths: &[&Path], quiet: bool) {
+    log!(quiet, "{} checking paths...", CUE.green());
     for path in paths {
         if path.exists() {
             log!(
-                quite,
+                quiet,
                 "  {} {}",
                 path.display().to_string().cyan(),
                 "exists".green()
@@ -195,13 +195,13 @@ fn validate_paths(paths: &[&Path], quite: bool) {
     }
 }
 
-fn validate_command(command: &ParsedCommand, quite: bool) {
-    log!(quite, "{} checking command...", CUE.green());
+fn validate_command(command: &ParsedCommand, quiet: bool) {
+    log!(quiet, "{} checking command...", CUE.green());
     if which::which(&command.cmd).is_err() {
         eprintln!("{} command '{}' not found", "Error:".red(), command.cmd);
         process::exit(1);
     }
-    log!(quite, "  '{}' {}", command.cmd, "found".green());
+    log!(quiet, "  '{}' {}", command.cmd, "found".green());
 }
 
 fn run_task(
@@ -210,10 +210,10 @@ fn run_task(
     watch_override: Option<Vec<String>>,
     run_override: Option<String>,
     debounce: u64,
-    quite: bool,
+    quiet: bool,
     no_clear: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let name = pick_task(config, name, quite);
+    let name = pick_task(config, name, quiet);
     let task = config.tasks.get(&name).cloned().unwrap_or_else(|| {
         eprintln!("{} task '{}' not found", "Error:".red(), name);
         process::exit(1);
@@ -222,9 +222,9 @@ fn run_task(
     let run_str = run_override.unwrap_or(task.run);
     let paths: Vec<&Path> = watch_strs.iter().map(|s| Path::new(s)).collect();
     let command = parse_command(&run_str);
-    validate_paths(&paths, quite);
-    validate_command(&command, quite);
-    start_watcher(paths, command, &run_str, debounce, quite, no_clear)
+    validate_paths(&paths, quiet);
+    validate_command(&command, quiet);
+    start_watcher(paths, command, &run_str, debounce, quiet, no_clear)
 }
 
 fn start_watcher(
@@ -232,7 +232,7 @@ fn start_watcher(
     command: ParsedCommand,
     run_str: &str,
     debounce: u64,
-    quite: bool,
+    quiet: bool,
     no_clear: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let width = terminal_size()
@@ -243,7 +243,7 @@ fn start_watcher(
     let mut watcher = recommended_watcher(tx)?;
 
     log!(
-        quite,
+        quiet,
         "{} watching — will run '{}' on changes",
         CUE.green(),
         run_str
@@ -281,18 +281,18 @@ fn start_watcher(
                     .unwrap_or(PathBuf::new());
 
                 if no_clear {
-                    log!(quite, "{}", "_".repeat(width));
+                    log!(quiet, "{}", "_".repeat(width));
                 } else {
                     clearscreen::clear().unwrap();
                 }
                 log!(
-                    quite,
+                    quiet,
                     "{} {} changed at {}",
                     CUE.green(),
                     changed.display().to_string().cyan(),
                     Utc::now().format("%H:%M:%S")
                 );
-                log!(quite, "{}", "_".repeat(width));
+                log!(quiet, "{}", "_".repeat(width));
 
                 child = Some(
                     Command::new(&command.cmd)
@@ -368,20 +368,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             run,
             debounce,
             global,
-            quite,
+            quiet,
             no_clear,
         }) => {
-            let config = resolve_config(global, quite);
-            run_task(&config, name, watch, run, debounce, quite, no_clear)?;
+            let config = resolve_config(global, quiet);
+            run_task(&config, name, watch, run, debounce, quiet, no_clear)?;
         }
 
         None => {
             if args.watch.is_empty() && args.run.is_none() {
                 let config = if args.global {
-                    log!(args.quite, "{} loading global tasks", CUE.green());
+                    log!(args.quiet, "{} loading global tasks", CUE.green());
                     load_config(true)
                 } else if Path::new("cue.toml").exists() {
-                    log!(args.quite, "{} loading tasks from 'cue.toml'", CUE.green());
+                    log!(args.quiet, "{} loading tasks from 'cue.toml'", CUE.green());
                     load_config(false)
                 } else {
                     eprintln!(
@@ -396,7 +396,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     None,
                     None,
                     args.debounce,
-                    args.quite,
+                    args.quiet,
                     args.no_clear,
                 )?;
             } else {
@@ -410,14 +410,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
                 let paths: Vec<&Path> = args.watch.iter().map(|s| Path::new(s)).collect();
                 let command = parse_command(&run_str);
-                validate_paths(&paths, args.quite);
-                validate_command(&command, args.quite);
+                validate_paths(&paths, args.quiet);
+                validate_command(&command, args.quiet);
                 start_watcher(
                     paths,
                     command,
                     &run_str,
                     args.debounce,
-                    args.quite,
+                    args.quiet,
                     args.no_clear,
                 )?;
             }
@@ -425,12 +425,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         Some(Commands::Init) => {
             if Path::new("cue.toml").exists() {
-                log!(args.quite, "{} cue.toml already exists", CUE.green());
+                log!(args.quiet, "{} cue.toml already exists", CUE.green());
             } else {
                 let mut file = File::create("cue.toml")?;
                 file.write_all(b"\"default\" = \"taskname\" \n\n[tasks.taskname]\nwatch = [\"filename.txt\"]\nrun = \"cmd arg -f\"\n")?;
                 log!(
-                    args.quite,
+                    args.quiet,
                     "{} cue.toml created — edit it then run cue",
                     CUE.green()
                 );
