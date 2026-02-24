@@ -25,8 +25,6 @@ macro_rules! log {
     };
 }
 
-// ─── Config ───────────────────────────────────────────────────────────────────
-
 #[derive(Serialize, Deserialize, Default)]
 struct CueConfig {
     default: Option<String>,
@@ -39,8 +37,6 @@ struct Task {
     run: String,
 }
 
-// ─── CLI ──────────────────────────────────────────────────────────────────────
-
 #[derive(Parser)]
 #[command(
     name = "cue",
@@ -50,22 +46,16 @@ struct Task {
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-
     #[arg(short, long, num_args = 1..)]
     watch: Vec<String>,
-
     #[arg(short, long)]
     run: Option<String>,
-
     #[arg(long, short, default_value_t = DEBOUNCE_MS)]
     debounce: u64,
-
     #[arg(long, short)]
     global: bool,
-
     #[arg(long)]
     quite: bool,
-
     #[arg(long, short)]
     no_clear: bool,
 }
@@ -78,22 +68,16 @@ enum Commands {
     },
     Run {
         name: Option<String>,
-
         #[arg(short, long, num_args = 1..)]
         watch: Option<Vec<String>>,
-
         #[arg(short, long)]
         run: Option<String>,
-
         #[arg(long, short, default_value_t = DEBOUNCE_MS)]
         debounce: u64,
-
         #[arg(long, short)]
         global: bool,
-
         #[arg(long, short)]
         quite: bool,
-
         #[arg(long, short)]
         no_clear: bool,
     },
@@ -104,10 +88,8 @@ enum Commands {
 enum TaskAction {
     Add {
         name: String,
-
         #[arg(short, long, num_args = 1.., required = true)]
         watch: Vec<String>,
-
         #[arg(short, long, required = true)]
         run: String,
     },
@@ -125,8 +107,6 @@ enum TaskAction {
     },
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 struct ParsedCommand {
     cmd: String,
     args: Vec<String>,
@@ -137,16 +117,65 @@ fn parse_command(run: &str) -> ParsedCommand {
         eprintln!("{} failed to parse command: {}", "Error:".red(), e);
         process::exit(1);
     });
-
     if parts.is_empty() {
         eprintln!("{} empty command", "Error:".red());
         process::exit(1);
     }
-
     ParsedCommand {
         cmd: parts[0].clone(),
         args: parts[1..].to_vec(),
     }
+}
+
+fn load_config(from_global: bool) -> CueConfig {
+    if from_global {
+        confy::load::<CueConfig>("cue", None).unwrap_or_else(|_| {
+            eprintln!("{} failed to read config", "Error:".red());
+            process::exit(1);
+        })
+    } else {
+        let content = fs::read_to_string("cue.toml").unwrap_or_else(|_| {
+            eprintln!("{} failed to read cue.toml", "Error:".red());
+            process::exit(1);
+        });
+        toml::from_str(&content).unwrap_or_else(|e| {
+            eprintln!("{} invalid cue.toml: {}", "Error:".red(), e);
+            process::exit(1);
+        })
+    }
+}
+
+fn resolve_config(global: bool, quite: bool) -> CueConfig {
+    if global {
+        log!(quite, "{} loading global tasks", CUE.green());
+        load_config(true)
+    } else if Path::new("cue.toml").exists() {
+        log!(quite, "{} loading tasks from 'cue.toml'", CUE.green());
+        load_config(false)
+    } else {
+        log!(quite, "{} loading global tasks", CUE.green());
+        load_config(true)
+    }
+}
+
+fn pick_task(config: &CueConfig, name: Option<String>, quite: bool) -> String {
+    if let Some(n) = name {
+        return n;
+    }
+    if let Some(d) = &config.default {
+        log!(quite, "{} default task '{}' — running it", CUE.green(), d);
+        return d.clone();
+    }
+    let tasks: Vec<&String> = config.tasks.keys().collect();
+    let choice = Select::new()
+        .with_prompt("which task do you want to run?")
+        .items(&tasks)
+        .interact()
+        .unwrap_or_else(|_| {
+            eprintln!("{} cancelled", "Error:".red());
+            process::exit(1);
+        });
+    tasks[choice].to_string()
 }
 
 fn validate_paths(paths: &[&Path], quite: bool) {
@@ -175,6 +204,29 @@ fn validate_command(command: &ParsedCommand, quite: bool) {
     log!(quite, "  '{}' {}", command.cmd, "found".green());
 }
 
+fn run_task(
+    config: &CueConfig,
+    name: Option<String>,
+    watch_override: Option<Vec<String>>,
+    run_override: Option<String>,
+    debounce: u64,
+    quite: bool,
+    no_clear: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let name = pick_task(config, name, quite);
+    let task = config.tasks.get(&name).cloned().unwrap_or_else(|| {
+        eprintln!("{} task '{}' not found", "Error:".red(), name);
+        process::exit(1);
+    });
+    let watch_strs = watch_override.unwrap_or(task.watch);
+    let run_str = run_override.unwrap_or(task.run);
+    let paths: Vec<&Path> = watch_strs.iter().map(|s| Path::new(s)).collect();
+    let command = parse_command(&run_str);
+    validate_paths(&paths, quite);
+    validate_command(&command, quite);
+    start_watcher(paths, command, &run_str, debounce, quite, no_clear)
+}
+
 fn start_watcher(
     paths: Vec<&Path>,
     command: ParsedCommand,
@@ -187,7 +239,6 @@ fn start_watcher(
         .map(|(Width(w), _)| w as usize)
         .unwrap_or(80)
         / 2;
-
     let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
     let mut watcher = recommended_watcher(tx)?;
 
@@ -202,17 +253,13 @@ fn start_watcher(
         watcher.watch(path, RecursiveMode::Recursive)?;
     }
 
-    let mut child: Option<std::process::Child> = None;
     let mut last_run = Instant::now();
-
-    if quite {
-        child = Some(
-            Command::new(&command.cmd)
-                .args(&command.args)
-                .spawn()
-                .expect("failed to spawn command"),
-        )
-    };
+    let mut child = Some(
+        Command::new(&command.cmd)
+            .args(&command.args)
+            .spawn()
+            .expect("failed to spawn command"),
+    );
 
     for event in rx {
         match event {
@@ -235,8 +282,8 @@ fn start_watcher(
 
                 if no_clear {
                     log!(quite, "{}", "_".repeat(width));
-                }else {
-                    clearscreen::clear().unwrap()
+                } else {
+                    clearscreen::clear().unwrap();
                 }
                 log!(
                     quite,
@@ -262,15 +309,12 @@ fn start_watcher(
     Ok(())
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Cli::parse();
 
     match args.command {
         Some(Commands::Task { action }) => {
-            let mut config: CueConfig = confy::load("cue", None)?;
-
+            let mut config: CueConfig = load_config(true);
             match action {
                 TaskAction::Add { name, watch, run } => {
                     config.tasks.insert(name.clone(), Task { watch, run });
@@ -306,14 +350,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         eprintln!("{} task '{}' not found", "Error:".red(), name);
                         process::exit(1);
                     });
-
                     if let Some(x) = run {
-                        task.run = x
+                        task.run = x;
                     }
                     if !watch.is_empty() {
-                        task.watch = watch
+                        task.watch = watch;
                     }
-
                     confy::store("cue", None, config)?;
                     println!("{} task '{}' updated", CUE.green(), name);
                 }
@@ -329,129 +371,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             quite,
             no_clear,
         }) => {
-            let config: CueConfig = if Path::new("cue.toml").exists() && !global {
-                log!(
-                    quite,
-                    "{} found 'cue.toml' — loading tasks from it",
-                    CUE.green()
-                );
-                let content = fs::read_to_string("cue.toml").unwrap_or_else(|_| {
-                    eprintln!("{} failed to read cue.toml", "Error:".red());
-                    process::exit(1);
-                });
-
-                toml::from_str(&content).unwrap_or_else(|e| {
-                    eprintln!("{} invalid cue.toml: {}", "Error:".red(), e);
-                    process::exit(1);
-                })
-            } else {
-                log!(quite, "{} loading global tasks", CUE.green());
-                confy::load("cue", None)?
-            };
-
-            let name = if let Some(n) = name {
-                n
-            } else {
-                let tasks: Vec<&String> = config.tasks.keys().collect();
-                let choice = Select::new()
-                    .with_prompt("which task do you want to run?")
-                    .items(&tasks)
-                    .interact()
-                    .unwrap_or_else(|_| {
-                        eprintln!("{} cancelled", "Error:".red());
-                        process::exit(1);
-                    });
-                tasks[choice].to_string()
-            };
-
-            let task = config.tasks.get(&name).cloned().unwrap_or_else(|| {
-                eprintln!("{} task '{}' not found", "Error:".red(), name);
-                process::exit(1);
-            });
-
-            let watch_strs = watch.unwrap_or(task.watch);
-            let run_str = run.unwrap_or(task.run);
-            let paths: Vec<&Path> = watch_strs.iter().map(|s| Path::new(s)).collect();
-            let command = parse_command(&run_str);
-
-            validate_paths(&paths, quite);
-            validate_command(&command, quite);
-            start_watcher(paths, command, &run_str, debounce, quite, no_clear)?;
+            let config = resolve_config(global, quite);
+            run_task(&config, name, watch, run, debounce, quite, no_clear)?;
         }
 
         None => {
             if args.watch.is_empty() && args.run.is_none() {
-                let config: CueConfig = if args.global {
+                let config = if args.global {
                     log!(args.quite, "{} loading global tasks", CUE.green());
-                    confy::load("cue", None).unwrap_or_else(|_| {
-                        eprintln!("{} failed to read config", "Error:".red());
-                        process::exit(1);
-                    })
+                    load_config(true)
                 } else if Path::new("cue.toml").exists() {
-                    let content = fs::read_to_string("cue.toml").unwrap_or_else(|_| {
-                        eprintln!("{} failed to read cue.toml", "Error:".red());
-                        process::exit(1);
-                    });
-
-                    log!(
-                        args.quite,
-                        "{} loading tasks from \'cue.toml\'",
-                        CUE.green()
-                    );
-                    toml::from_str(&content).unwrap_or_else(|e| {
-                        eprintln!("{} invalid cue.toml: {}", "Error:".red(), e);
-                        process::exit(1);
-                    })
+                    log!(args.quite, "{} loading tasks from 'cue.toml'", CUE.green());
+                    load_config(false)
                 } else {
                     eprintln!(
-                        "{} no \'cue.toml\' found - please provide paths with -w and a command to run with -r (or use the -g flag to use global tasks)",
+                        "{} no 'cue.toml' found - please provide paths with -w and a command to run with -r (or use the -g flag to use global tasks)",
                         "Error:".red()
                     );
                     process::exit(1);
                 };
-                let name = if let Some(d) = config.default {
-                    log!(args.quite, "{} found a default task [{}]", CUE.green(), d);
-                    d
-                } else {
-                    let tasks: Vec<&String> = config.tasks.keys().collect();
-                    let choice = Select::new()
-                        .with_prompt("which task do you want to run?")
-                        .items(&tasks)
-                        .interact()
-                        .unwrap_or_else(|_| {
-                            eprintln!("{} cancelled", "Error:".red());
-                            process::exit(1);
-                        });
-                    tasks[choice].to_string()
-                };
-                let task = config.tasks.get(&name).unwrap_or_else(|| {
-                    eprintln!("{} task \'{}\' not found", "Error:".red(), name);
-                    process::exit(1);
-                });
-                let watch_strs = &task.watch;
-                let run_str = &task.run;
-                let paths: Vec<&Path> = watch_strs.iter().map(|s| Path::new(s)).collect();
-                let command = parse_command(&run_str);
-
-                validate_paths(&paths, args.quite);
-                validate_command(&command, args.quite);
-                start_watcher(
-                    paths,
-                    command,
-                    &run_str,
+                run_task(
+                    &config,
+                    None,
+                    None,
+                    None,
                     args.debounce,
                     args.quite,
                     args.no_clear,
                 )?;
             } else {
+                if args.watch.is_empty() {
+                    eprintln!("{} please provide paths with -w", "Error:".red());
+                    process::exit(1);
+                }
                 let run_str = args.run.unwrap_or_else(|| {
                     eprintln!("{} please provide a command with -r", "Error:".red());
                     process::exit(1);
                 });
-
                 let paths: Vec<&Path> = args.watch.iter().map(|s| Path::new(s)).collect();
                 let command = parse_command(&run_str);
-
                 validate_paths(&paths, args.quite);
                 validate_command(&command, args.quite);
                 start_watcher(
@@ -464,12 +422,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )?;
             }
         }
+
         Some(Commands::Init) => {
             if Path::new("cue.toml").exists() {
-                log!(args.quite, "{} cue.toml already exists", CUE.green())
+                log!(args.quite, "{} cue.toml already exists", CUE.green());
             } else {
                 let mut file = File::create("cue.toml")?;
-                file.write_all(b"\"default\" = \"taskname\" \n\n[tasks.taskname]\nwatch = [\"filename.txt\"]\nrun = \"cmd arg -f\"\n",)?;
+                file.write_all(b"\"default\" = \"taskname\" \n\n[tasks.taskname]\nwatch = [\"filename.txt\"]\nrun = \"cmd arg -f\"\n")?;
                 log!(
                     args.quite,
                     "{} cue.toml created — edit it then run cue",
