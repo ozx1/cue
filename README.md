@@ -12,6 +12,7 @@ cue is a lightweight CLI tool that watches your files and automatically runs a c
 - [Tasks](#tasks)
 - [Local Project Config](#local-project-config)
 - [Debounce](#debounce)
+- [Zero config mode](#zero-config-mode)
 
 ---
 
@@ -177,8 +178,41 @@ change it with `--debounce` / `-d`:
 ```bash
 cue -w src -r "cargo build" -d 500
 ```
-
 ---
+## Zero-Config Mode
+
+You can run `cue` with no flags
+```bash
+cue
+```
+
+If a `cue.toml` exists in your current directory, cue loads it
+
+**If a default task is set**, cue runs it immediately:
+```toml
+"default" = "test"
+```
+```
+[cue] loading tasks from 'cue.toml'
+[cue] default task 'build' — running it
+```
+
+**If no default is set**, cue shows a picker so you can choose:
+```
+[cue] loading tasks from 'cue.toml'
+? which task do you want to run?
+> build
+  test
+  lint
+```
+
+Use `--global` / `-g` to skip `cue.toml` and load from your global tasks instead:
+```bash
+cue --global
+```
+
+> **Note:** If there is no `cue.toml` and no flags are provided, cue will show an error and ask you to use `-w` and `-r` directly or you can use the `-g` flag to load global tasks.
+
 
 ## How It Works
 

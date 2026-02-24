@@ -1,6 +1,7 @@
 use chrono::Utc;
 use clap::{Parser, Subcommand};
 use colored::*;
+use dialoguer::Select;
 use notify::{Event, EventKind, RecursiveMode, Watcher, recommended_watcher};
 use serde::{Deserialize, Serialize};
 use shell_words::split;
@@ -19,6 +20,7 @@ const DEBOUNCE_MS: u64 = 150;
 
 #[derive(Serialize, Deserialize, Default)]
 struct CueConfig {
+    default: Option<String>,
     tasks: HashMap<String, Task>,
 }
 
@@ -48,6 +50,9 @@ struct Cli {
 
     #[arg(long, short, default_value_t = DEBOUNCE_MS)]
     debounce: u64,
+
+    #[arg(long, short)]
+    global: bool,
 }
 
 #[derive(Subcommand)]
@@ -65,7 +70,7 @@ enum Commands {
         #[arg(long, short, default_value_t = DEBOUNCE_MS)]
         debounce: u64,
         #[arg(long, short)]
-        global: bool
+        global: bool,
     },
 }
 
@@ -250,12 +255,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             watch,
             run,
             debounce,
-            global
+            global,
         }) => {
             let config: CueConfig = if Path::new("cue.toml").exists() && !global {
-                println!(
-                    "{} found 'cue.toml' — loading tasks from it", CUE.green()
-                );
+                println!("{} found 'cue.toml' — loading tasks from it", CUE.green());
                 let content = fs::read_to_string("cue.toml").unwrap_or_else(|_| {
                     eprintln!("{} failed to read cue.toml", "Error:".red());
                     process::exit(1);
@@ -266,9 +269,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     process::exit(1);
                 })
             } else {
-                println!(
-                    "{} loading global tasks", CUE.green()
-                );
+                println!("{} loading global tasks", CUE.green());
                 confy::load("cue", None)?
             };
 
@@ -288,21 +289,71 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         None => {
-            if args.watch.is_empty() {
-                eprintln!("{} please provide paths with -w", "Error:".red());
-                process::exit(1);
+            if args.watch.is_empty() && args.run.is_none() {
+                let config: CueConfig = if args.global {
+                    println!("{} loading global tasks", CUE.green());
+                    confy::load("cue", None).unwrap_or_else(|_| {
+                        eprintln!("{} failed to read config", "Error:".red());
+                        process::exit(1);
+                    })
+                } else if Path::new("cue.toml").exists() {
+                    let content = fs::read_to_string("cue.toml").unwrap_or_else(|_| {
+                        eprintln!("{} failed to read cue.toml", "Error:".red());
+                        process::exit(1);
+                    });
+
+                    println!("{} loading tasks from \'cue.toml\'", CUE.green());
+                    toml::from_str(&content).unwrap_or_else(|e| {
+                        eprintln!("{} invalid cue.toml: {}", "Error:".red(), e);
+                        process::exit(1);
+                    })
+                } else {
+                    eprintln!(
+                        "{} no \'cue.toml\' found - please provide paths with -w and a command to run with -r (or use the -g flag to use global tasks)",
+                        "Error:".red()
+                    );
+                    process::exit(1);
+                };
+                let name = if let Some(d) = config.default {
+                    println!("{} found a default task [{}]", CUE.green(), d);
+                    d
+                } else {
+                    let tasks: Vec<&String> = config.tasks.keys().collect();
+                    let choice = Select::new()
+                        .with_prompt("which task do you want to run?")
+                        .items(&tasks)
+                        .interact()
+                        .unwrap_or_else(|_| {
+                            eprintln!("{} cancelled", "Error:".red());
+                            process::exit(1);
+                        });
+                    tasks[choice].to_string()
+                };
+                let task = config.tasks.get(&name).unwrap_or_else(|| {
+                    eprintln!("{} task \'{}\' not found", "Error:".red(), name);
+                    process::exit(1);
+                });
+                let watch_strs = &task.watch;
+                let run_str = &task.run;
+                let paths: Vec<&Path> = watch_strs.iter().map(|s| Path::new(s)).collect();
+                let command = parse_command(&run_str);
+
+                validate_paths(&paths);
+                validate_command(&command);
+                start_watcher(paths, command, &run_str, args.debounce)?;
+            } else {
+                let run_str = args.run.unwrap_or_else(|| {
+                    eprintln!("{} please provide a command with -r", "Error:".red());
+                    process::exit(1);
+                });
+
+                let paths: Vec<&Path> = args.watch.iter().map(|s| Path::new(s)).collect();
+                let command = parse_command(&run_str);
+
+                validate_paths(&paths);
+                validate_command(&command);
+                start_watcher(paths, command, &run_str, args.debounce)?;
             }
-            let run_str = args.run.unwrap_or_else(|| {
-                eprintln!("{} please provide a command with -r", "Error:".red());
-                process::exit(1);
-            });
-
-            let paths: Vec<&Path> = args.watch.iter().map(|s| Path::new(s)).collect();
-            let command = parse_command(&run_str);
-
-            validate_paths(&paths);
-            validate_command(&command);
-            start_watcher(paths, command, &run_str, args.debounce)?;
         }
     }
 
