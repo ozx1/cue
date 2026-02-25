@@ -1,6 +1,6 @@
 [package]
 name = "cue-watch"
-version = "0.3.1"
+version = "0.3.2"
 description = "A fast, lightweight file watcher that automatically runs your command on every save"
 edition = "2024"
 license = "MIT"
