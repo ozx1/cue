@@ -66,7 +66,7 @@ cargo install --path .
 **or install via cargo**
 
 ```bash
-cargo install cue
+cargo install cue-watch
 ```
 
 ---
