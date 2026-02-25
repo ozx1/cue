@@ -1,6 +1,11 @@
+<div align="center">
+<img src="assets/logo.png" width="150" style="border-radius:100%;"/>
+
 # cue
 
 A fast, lightweight file watcher that automatically runs your command on every save.
+
+</div>
 
 > **Note:** cue is still under active development — usable and tested, but features may change.
 
@@ -90,14 +95,14 @@ cue -w main.go -r "go run main.go"
 
 **Flags**
 
-| Flag | Short | Description |
-| --- | --- | --- |
-| `--watch` | `-w` | Files or directories to watch |
-| `--run` | `-r` | Command to run on change |
-| `--extensions` | `-e` | Watch files by extension |
-| `--debounce` | `-d` | Debounce window in ms (default: 150) |
-| `--quiet` | `-q` | Suppress cue's own log output |
-| `--no-clear` | — | Don't clear the screen between runs |
+| Flag           | Short | Description                          |
+| -------------- | ----- | ------------------------------------ |
+| `--watch`      | `-w`  | Files or directories to watch        |
+| `--run`        | `-r`  | Command to run on change             |
+| `--extensions` | `-e`  | Watch files by extension             |
+| `--debounce`   | `-d`  | Debounce window in ms (default: 150) |
+| `--quiet`      | `-q`  | Suppress cue's own log output        |
+| `--no-clear`   | —     | Don't clear the screen between runs  |
 
 ---
 
@@ -175,14 +180,14 @@ cue run test
 
 **Flags**
 
-| Flag | Short | Description |
-| --- | --- | --- |
-| `--watch` | `-w` | Override watch paths |
-| `--run` | `-r` | Override command |
-| `--debounce` | `-d` | Debounce window in ms |
-| `--global` | `-g` | Force global tasks even if `cue.toml` exists |
-| `--quiet` | `-q` | Suppress cue's own log output |
-| `--no-clear` | — | Don't clear the screen between runs |
+| Flag         | Short | Description                                  |
+| ------------ | ----- | -------------------------------------------- |
+| `--watch`    | `-w`  | Override watch paths                         |
+| `--run`      | `-r`  | Override command                             |
+| `--debounce` | `-d`  | Debounce window in ms                        |
+| `--global`   | `-g`  | Force global tasks even if `cue.toml` exists |
+| `--quiet`    | `-q`  | Suppress cue's own log output                |
+| `--no-clear` | —     | Don't clear the screen between runs          |
 
 ---
 
@@ -222,11 +227,11 @@ run = "cargo test"
 
 ### Config resolution
 
-| Situation | What cue loads |
-| --- | --- |
+| Situation                        | What cue loads              |
+| -------------------------------- | --------------------------- |
 | `cue.toml` exists in current dir | Local tasks from `cue.toml` |
-| No `cue.toml` | Global tasks |
-| `--global` / `-g` flag | Global tasks (always) |
+| No `cue.toml`                    | Global tasks                |
+| `--global` / `-g` flag           | Global tasks (always)       |
 
 ---
 
@@ -300,12 +305,12 @@ cue --global
 
 Benchmarked against the most popular file watchers
 
-| Tool | Startup | Idle Memory | CPU (idle) | Commands fired (50 changes) |
-| --- | --- | --- | --- | --- |
-| **cue** | **219ms** | **7.6 MB** | **0%** | 27/50 ¹ |
-| watchexec | 214ms | 13.5 MB | 0% | 51/50 |
-| chokidar | 482ms | 37.6 MB | 0% | 1/50 ² |
-| nodemon | 533ms | 41.2 MB | 0% | 102/50 ³ |
+| Tool      | Startup   | Idle Memory | CPU (idle) | Commands fired (50 changes) |
+| --------- | --------- | ----------- | ---------- | --------------------------- |
+| **cue**   | **219ms** | **7.6 MB**  | **0%**     | 27/50 ¹                     |
+| watchexec | 214ms     | 13.5 MB     | 0%         | 51/50                       |
+| chokidar  | 482ms     | 37.6 MB     | 0%         | 1/50 ²                      |
+| nodemon   | 533ms     | 41.2 MB     | 0%         | 102/50 ³                    |
 
 ¹ Intentional — cue debounces and kills stale runs, so rapid saves collapse into one clean run per burst. Tune with `-d`.  
 ² chokidar's debounce is too aggressive for rapid changes, missing most events.  
