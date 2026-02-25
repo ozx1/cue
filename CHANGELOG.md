@@ -10,6 +10,13 @@ All notable changes to cue will be documented in this file.
 
 ---
 
+
+## [0.3.1] - 2026-02-25
+
+## Added
+- **Multithreading** to kill the old process without affecting the watcher loop
+- **Add Caching** for searching paths by extensions feature
+
 ## [0.3.0] - 2026-02-25
 
 ## Added

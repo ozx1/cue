@@ -9,8 +9,9 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{self, Command};
+use std::process::{self, Child, Command};
 use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 use terminal_size::{Width, terminal_size};
 use walkdir::WalkDir;
@@ -236,10 +237,38 @@ fn find_by_extensions(extensions: &[String]) -> Vec<PathBuf> {
 
 fn resolve_paths(watch: Vec<String>, extensions: Option<Vec<String>>) -> Vec<String> {
     match extensions {
-        Some(exts) if !exts.is_empty() => find_by_extensions(&exts)
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect(),
+        Some(exts) if !exts.is_empty() => {
+            let cache_path = std::env::temp_dir().join("cue_path_cache.json");
+            let dirs_mtime: u64 = watch
+                .iter()
+                .filter_map(|w| fs::metadata(w).ok())
+                .filter_map(|m| m.modified().ok())
+                .filter_map(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .sum();
+
+            if let Ok(cached) = fs::read_to_string(&cache_path) {
+                if let Ok((stored_mtime, stored_watch, stored_exts, paths)) =
+                    serde_json::from_str::<(u64, Vec<String>, Vec<String>, Vec<String>)>(&cached)
+                {
+                    if stored_mtime == dirs_mtime && stored_watch == watch && stored_exts == exts {
+                        return paths;
+                    }
+                }
+            }
+
+            let paths: Vec<String> = find_by_extensions(&exts)
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect();
+
+            let _ = fs::write(
+                &cache_path,
+                serde_json::to_string(&(dirs_mtime, &watch, &exts, &paths)).unwrap_or_default(),
+            );
+
+            paths
+        }
         _ => watch,
     }
 }
@@ -303,6 +332,8 @@ fn start_watcher(
         watcher.watch(path, RecursiveMode::Recursive)?;
     }
 
+    log!(quiet, "{}", "_".repeat(width));
+
     let mut last_run = Instant::now();
     let mut child = Some(
         Command::new(&command.cmd)
@@ -311,6 +342,13 @@ fn start_watcher(
             .expect("failed to spawn command"),
     );
 
+    let (reaper_tx, reaper_rx) = mpsc::channel::<Child>();
+    thread::spawn(move || {
+        while let Ok(mut c) = reaper_rx.recv() {
+            c.kill().ok();
+            c.wait().ok();
+        }
+    });
     for event in rx {
         match event {
             Ok(e) if matches!(e.kind, EventKind::Modify(_) | EventKind::Create(_)) => {
@@ -319,21 +357,15 @@ fn start_watcher(
                 }
                 last_run = Instant::now();
 
-                if let Some(mut c) = child.take() {
-                    c.kill().ok();
-                    c.wait().ok();
+                if let Some(c) = child.take() {
+                    reaper_tx.send(c).ok();
                 }
-
-                let changed = e
+                let file_name = e
                     .paths
                     .first()
-                    .map(|p| dunce::canonicalize(p).unwrap_or(p.clone()))
-                    .unwrap_or(PathBuf::new());
-
-                let file_name = changed
-                    .file_name()
+                    .and_then(|p| p.file_name())
                     .map(|f| f.to_string_lossy().to_string())
-                    .unwrap_or(changed.display().to_string());
+                    .unwrap_or_default();
 
                 if no_clear {
                     log!(quiet, "{}", "_".repeat(width));

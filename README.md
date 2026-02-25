@@ -1,8 +1,8 @@
 # cue
 
-cue is a lightweight CLI tool that watches your files and automatically runs a command every time you save. No config needed to get started.
+A fast, lightweight file watcher that automatically runs your command on every save.
 
-> **Note:** cue is still under active development — usable and tested ,but features may change.
+> **Note:** cue is still under active development — usable and tested, but features may change.
 
 ---
 
@@ -11,11 +11,14 @@ cue is a lightweight CLI tool that watches your files and automatically runs a c
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Watch Mode](#watch-mode)
-- [Watch file by extensions](#watch-file-by-extensions)
+- [Watch by Extensions](#watch-by-extensions)
 - [Tasks](#tasks)
 - [Local Project Config](#local-project-config)
 - [Debounce](#debounce)
-- [Zero config mode](#zero-config-mode)
+- [Quiet Mode](#quiet-mode)
+- [Zero-Config Mode](#zero-config-mode)
+- [Benchmarks](#benchmarks)
+- [How It Works](#how-it-works)
 
 ---
 
@@ -32,6 +35,8 @@ cue is a lightweight CLI tool that watches your files and automatically runs a c
 **Watch and run on every save**
 
 <img src="assets/cue_watch.png" width="400"/>
+
+---
 
 ## Installation
 
@@ -61,13 +66,13 @@ cargo install --path .
 cue -w src -r "cargo run"
 ```
 
-That's it. Every time you save a file inside `src`, cue runs `cargo run`.
+Every time you save a file inside `src`, cue runs `cargo run`. That's all there is to it.
 
 ---
 
 ## Watch Mode
 
-Watch one or more files or directories and run a command on every save.
+Watch files or directories and run a command on every save.
 
 ```bash
 cue -w <files or dirs> -r "<command>"
@@ -76,13 +81,8 @@ cue -w <files or dirs> -r "<command>"
 **Examples**
 
 ```bash
-# Watch a directory
 cue -w src -r "cargo run"
-
-# Watch multiple directories
 cue -w src tests -r "cargo test"
-
-# Watch a single file
 cue -w main.go -r "go run main.go"
 ```
 
@@ -90,118 +90,127 @@ cue -w main.go -r "go run main.go"
 
 **Flags**
 
-| Flag         | Short | Description                                  |
-| ------------ | ----- | -------------------------------------------- |
-| `--watch`    | `-w`  | Files or directories to watch                |
-| `--run`      | `-r`  | Command to run on change                     |
-| `--debounce` | `-d`  | Set the [Debounce](#debounce) value (ms)     |
-| `--quite`    | `-q`  | Enables quite mode                           |
-| `--no-clear` | -     | Disables clearing the screen after every run |
+| Flag | Short | Description |
+| --- | --- | --- |
+| `--watch` | `-w` | Files or directories to watch |
+| `--run` | `-r` | Command to run on change |
+| `--extensions` | `-e` | Watch files by extension |
+| `--debounce` | `-d` | Debounce window in ms (default: 150) |
+| `--quiet` | `-q` | Suppress cue's own log output |
+| `--no-clear` | — | Don't clear the screen between runs |
 
 ---
 
-## Watch file by extensions
+## Watch by Extensions
 
- Watch file by extensions using `-e` \ `--extensions`
+Watch all files matching a given extension recursively from the current directory.
 
- ```bash
+```bash
 cue -e rs -r "cargo run"
- ```
+cue -e js ts -r "node index.js"
+```
 
-> **Note** this feature is not fully tested and may take lot of memory when there is a lot of files with the provided extensions
+---
 
 ## Tasks
 
-Save a watch + command pair as a named task so you can run it with a single word. Tasks are saved globally on your machine and available from any directory.
+Save a watch + command pair as a named task and run it anywhere with a single word. Tasks are stored globally and available from any directory.
 
-### Add a task
-
-```bash
-cue task add <name> -w <files or dirs> -r "<command>"
-```
-
-### Run a task
+### Add
 
 ```bash
-cue run <name>
+cue task add <n> -w <files or dirs> -r "<command>"
 ```
 
-### List all tasks
+### Run
+
+```bash
+cue run <n>
+```
+
+### List
 
 ```bash
 cue task list
 ```
 
-### Edit a task
+### Edit
 
 ```bash
-cue task edit <name> -w <files or dirs>
-cue task edit <name> -r "<command>"
-cue task edit <name> -w <files or dirs> -r "<command>"
+cue task edit <n> -w <new paths>
+cue task edit <n> -r "<new command>"
+cue task edit <n> -w <new paths> -r "<new command>"
 ```
 
-## Rename a task
+### Rename
 
 ```bash
-cue task rename <current_name> <new_name>
+cue task rename <n> <new_name>
 ```
 
-### Remove a task
+### Remove
 
 ```bash
-cue task remove <name>
+cue task remove <n>
 ```
 
-### Examples
+### Override on run
+
+Run a task with a different path or command without permanently editing it:
 
 ```bash
-# Save tasks
+cue run build -w src/main.rs
+cue run build -r "cargo build"
+```
+
+**Examples**
+
+```bash
 cue task add build -w src -r "cargo build --release"
 cue task add test -w src tests -r "cargo test"
 
-# Run them
 cue run build
 cue run test
 ```
 
-### Override a task
-
-Run a saved task with a different path or command without editing it:
-
-```bash
-# Different path
-cue run build -w src/main.rs
-
-# Different command
-cue run build -r "cargo build"
-```
-
 **Flags**
 
-| Flag         | Short | Description                                                             |
-| ------------ | ----- | ----------------------------------------------------------------------- |
-| `--watch`    | `-w`  | Override the task's watch paths                                         |
-| `--run`      | `-r`  | Override the task's command                                             |
-| `--debounce` | `-d`  | Set the [Debounce](#debounce) value (ms)                                |
-| `--global`   | `-g`  | Force using global tasks instead of `cue.toml` in the working directory |
-| `--quite`    | `-q`  | Enables quite mode (only when running tasks)                            |
-| `--no-clear` | -     | Disables clearing the screen after every run                            |
+| Flag | Short | Description |
+| --- | --- | --- |
+| `--watch` | `-w` | Override watch paths |
+| `--run` | `-r` | Override command |
+| `--debounce` | `-d` | Debounce window in ms |
+| `--global` | `-g` | Force global tasks even if `cue.toml` exists |
+| `--quiet` | `-q` | Suppress cue's own log output |
+| `--no-clear` | — | Don't clear the screen between runs |
 
 ---
 
 ## Local Project Config
 
-By default, `cue run` looks for a `cue.toml` file in your current directory. If found, tasks are loaded from it instead of your global tasks. This lets you commit your cue setup alongside your project so your whole team can use the same commands.
+`cue run` ( or `cue` ) looks for a `cue.toml` in your current directory first. If found, tasks are loaded from it instead of your global tasks — great for committing your cue setup alongside your project.
 
-You can use `cue init` to create a cue.toml
+Create one with:
 
 ```bash
 cue init
 ```
 
+Or use a language template:
+
+```bash
+cue init rust
+cue init go
+cue init node
+```
+
+**Supported templates:** Rust, C, C++, Go, Zig, Swift, Haskell, Node.js, Ruby, PHP, Lua, Elixir, Java, Kotlin, CSS/SCSS, Shell
+
 ### cue.toml format
 
 ```toml
+default = "build"
+
 [tasks.build]
 watch = ["src"]
 run = "cargo build --release"
@@ -211,58 +220,21 @@ watch = ["src", "tests"]
 run = "cargo test"
 ```
 
-## templates 
+### Config resolution
 
-You can make cue.toml templates for your programming language using `cue init <template>`
-
-```bash
-cue init rust
-cue init go
-cue init cpp
-```
-
-**supported languages:**\
-      - Rust\
-      - C\
-      - C++\
-      - Go (Golang)\
-      - Zig\
-      - Swift\
-      - Haskell\
-      - Node.js (JavaScript/TypeScript)\
-      - Python\
-      - Ruby\
-      - PHP\
-      - Lua\
-      - Elixir\
-      - Java\
-      - Kotlin\
-      - CSS / SCSS (Sass)\
-      - Shell (Bash/Sh)
-
-### How cue works
-
-- If `cue.toml` exists in the current directory tasks load from it
-- If not tasks load from global config
-- Use `--global` / `-g` to force global tasks even when a `cue.toml` exists
-
-```bash
-# Uses cue.toml if present (default)
-cue run build
-
-# Forces global tasks
-cue run build --global
-```
+| Situation | What cue loads |
+| --- | --- |
+| `cue.toml` exists in current dir | Local tasks from `cue.toml` |
+| No `cue.toml` | Global tasks |
+| `--global` / `-g` flag | Global tasks (always) |
 
 ---
 
 ## Debounce
 
-When you save a file, your editor often writes to disk multiple times in quick succession. Without debounce, cue would run your command 3–5 times per save.
+Editors often write to disk multiple times on a single save. cue waits **150ms** after the last detected change before running your command — so you always get exactly one run per save.
 
-cue waits **150ms** after the last detected change before running — so you always get exactly one run per save.
-
-change it with `--debounce` / `-d`:
+Adjust it with `-d`:
 
 ```bash
 cue -w src -r "cargo build" -d 500
@@ -270,44 +242,43 @@ cue -w src -r "cargo build" -d 500
 
 ---
 
-## Quite mode
+## Quiet Mode
 
-Quite mode stops cue logs from appearing and just run the command when using `cue`, `cue run`, `cue run <taskname>` or `cue -w <files or dirs> -r "<command>"`
+Suppresses cue's own log lines and only shows output from your command. Works with `cue`, `cue run`, and `cue run <n>`.
 
-also quite mode doesn't stop errors or logs from `task` add, remove, edit or list
+Does **not** suppress errors or output from `task add`, `task remove`, `task edit`, or `task list`.
 
-enable it with `--quite` / `-q`
-
-```
+```bash
 cue -q
 cue run -q
-cue run my_task
+cue run my_task -q
 cue -w src -r "cargo run" -q
 ```
 
+---
+
 ## Zero-Config Mode
 
-You can run `cue` or `cue run` with no flags
+Run `cue` or `cue run` with no arguments.
 
 ```bash
 cue
 cue run
 ```
 
-If a `cue.toml` exists in your current directory, cue loads it
+If a `cue.toml` exists, cue loads it. Then:
 
-**If a default task is set**, cue runs it immediately:
+- **If a default task is set** — cue runs it immediately
+- **If no default is set** — cue shows an interactive picker
 
 ```toml
-"default" = "test"
+default = "build"
 ```
 
 ```
 [cue] loading tasks from 'cue.toml'
 [cue] default task 'build' — running it
 ```
-
-**If no default is set**, cue shows a picker so you can choose:
 
 ```
 [cue] loading tasks from 'cue.toml'
@@ -317,24 +288,53 @@ If a `cue.toml` exists in your current directory, cue loads it
   lint
 ```
 
-Use `--global` / `-g` to skip `cue.toml` and load from your global tasks instead:
+Use `--global` / `-g` to skip `cue.toml` and always load global tasks:
 
 ```bash
 cue --global
 ```
 
-> **Note:** If there is no `cue.toml` and no flags are provided, cue will show an error and ask you to use `-w` and `-r` directly or you can use the `-g` flag to load global tasks.
+---
 
-## How It Works
+## Benchmarks
+
+Benchmarked against the most popular file watchers
+
+| Tool | Startup | Idle Memory | CPU (idle) | Commands fired (50 changes) |
+| --- | --- | --- | --- | --- |
+| **cue** | **219ms** | **7.6 MB** | **0%** | 27/50 ¹ |
+| watchexec | 214ms | 13.5 MB | 0% | 51/50 |
+| chokidar | 482ms | 37.6 MB | 0% | 1/50 ² |
+| nodemon | 533ms | 41.2 MB | 0% | 102/50 ³ |
+
+¹ Intentional — cue debounces and kills stale runs, so rapid saves collapse into one clean run per burst. Tune with `-d`.  
+² chokidar's debounce is too aggressive for rapid changes, missing most events.  
+³ nodemon fires duplicate events per change.
+
+**Run the benchmarks yourself:**
+
+```bash
+bash ./benchmark.sh
+```
+
+Requires `watchexec`, `nodemon`, or `chokidar` for comparison. The script auto-detects what's installed and skips the rest.
+
+---
+
+## How cue Works
 
 1. cue starts watching all the paths you provide
 2. A file is saved — cue waits for the debounce window to pass
-3. If the previous run is still going, cue kills it
+3. If the previous command is still running, cue kills it
 4. cue runs your command fresh
+
+---
 
 ## Contributing
 
 Found a bug or have an idea? Open an issue or submit a pull request — contributions are welcome.
+
+---
 
 ## License
 
