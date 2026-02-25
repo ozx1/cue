@@ -13,6 +13,7 @@ use std::process::{self, Command};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use terminal_size::{Width, terminal_size};
+use walkdir::WalkDir;
 
 const CUE: &str = "[cue]";
 const DEBOUNCE_MS: u64 = 150;
@@ -34,7 +35,8 @@ struct CueConfig {
 #[derive(Serialize, Deserialize, Clone)]
 struct Task {
     watch: Vec<String>,
-    run: String,
+    run: Option<String>,
+    extensions: Option<Vec<String>>,
 }
 
 #[derive(Parser)]
@@ -50,11 +52,13 @@ struct Cli {
     watch: Vec<String>,
     #[arg(short, long)]
     run: Option<String>,
+    #[arg(short, long, num_args = 1..)]
+    extensions: Option<Vec<String>>,
     #[arg(long, short, default_value_t = DEBOUNCE_MS)]
     debounce: u64,
     #[arg(long, short)]
     global: bool,
-    #[arg(long)]
+    #[arg(long, short)]
     quiet: bool,
     #[arg(long, short)]
     no_clear: bool,
@@ -72,6 +76,8 @@ enum Commands {
         watch: Option<Vec<String>>,
         #[arg(short, long)]
         run: Option<String>,
+        #[arg(short, long, num_args = 1..)]
+        extensions: Option<Vec<String>>,
         #[arg(long, short, default_value_t = DEBOUNCE_MS)]
         debounce: u64,
         #[arg(long, short)]
@@ -81,17 +87,22 @@ enum Commands {
         #[arg(long, short)]
         no_clear: bool,
     },
-    Init,
+    Init {
+        template: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
 enum TaskAction {
+    #[command(group = clap::ArgGroup::new("source").required(true).multiple(true))]
     Add {
         name: String,
-        #[arg(short, long, num_args = 1.., required = true)]
+        #[arg(short, long, num_args = 1.., group = "source")]
         watch: Vec<String>,
-        #[arg(short, long, required = true)]
+        #[arg(short, long)]
         run: String,
+        #[arg(short, long, num_args = 1.., group = "source")]
+        extensions: Option<Vec<String>>,
     },
     Remove {
         name: String,
@@ -104,6 +115,12 @@ enum TaskAction {
         watch: Vec<String>,
         #[arg(short, long, group = "edit_fields")]
         run: Option<String>,
+        #[arg(short, long, num_args = 1.., group = "edit_fields")]
+        extensions: Option<Vec<String>>,
+    },
+    Rename {
+        name: String,
+        new_name: String,
     },
 }
 
@@ -204,11 +221,35 @@ fn validate_command(command: &ParsedCommand, quiet: bool) {
     log!(quiet, "  '{}' {}", command.cmd, "found".green());
 }
 
+fn find_by_extensions(extensions: &[String]) -> Vec<PathBuf> {
+    WalkDir::new(".")
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path().to_path_buf())
+        .filter(|p| {
+            p.extension()
+                .map(|e| extensions.iter().any(|ext| ext.as_str() == e))
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+fn resolve_paths(watch: Vec<String>, extensions: Option<Vec<String>>) -> Vec<String> {
+    match extensions {
+        Some(exts) if !exts.is_empty() => find_by_extensions(&exts)
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect(),
+        _ => watch,
+    }
+}
+
 fn run_task(
     config: &CueConfig,
     name: Option<String>,
     watch_override: Option<Vec<String>>,
     run_override: Option<String>,
+    extensions_override: Option<Vec<String>>,
     debounce: u64,
     quiet: bool,
     no_clear: bool,
@@ -218,8 +259,17 @@ fn run_task(
         eprintln!("{} task '{}' not found", "Error:".red(), name);
         process::exit(1);
     });
-    let watch_strs = watch_override.unwrap_or(task.watch);
-    let run_str = run_override.unwrap_or(task.run);
+
+    let extensions = extensions_override.or(task.extensions);
+    let watch_strs = resolve_paths(watch_override.unwrap_or(task.watch), extensions);
+    let run_str = run_override.or(task.run).unwrap_or_else(|| {
+        eprintln!(
+            "{} task has no run command — provide one with -r",
+            "Error:".red()
+        );
+        process::exit(1);
+    });
+
     let paths: Vec<&Path> = watch_strs.iter().map(|s| Path::new(s)).collect();
     let command = parse_command(&run_str);
     validate_paths(&paths, quiet);
@@ -280,6 +330,11 @@ fn start_watcher(
                     .map(|p| dunce::canonicalize(p).unwrap_or(p.clone()))
                     .unwrap_or(PathBuf::new());
 
+                let file_name = changed
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or(changed.display().to_string());
+
                 if no_clear {
                     log!(quiet, "{}", "_".repeat(width));
                 } else {
@@ -289,7 +344,7 @@ fn start_watcher(
                     quiet,
                     "{} {} changed at {}",
                     CUE.green(),
-                    changed.display().to_string().cyan(),
+                    file_name.cyan(),
                     Utc::now().format("%H:%M:%S")
                 );
                 log!(quiet, "{}", "_".repeat(width));
@@ -316,8 +371,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Task { action }) => {
             let mut config: CueConfig = load_config(true);
             match action {
-                TaskAction::Add { name, watch, run } => {
-                    config.tasks.insert(name.clone(), Task { watch, run });
+                TaskAction::Add {
+                    name,
+                    watch,
+                    run,
+                    extensions,
+                } => {
+                    config.tasks.insert(
+                        name.clone(),
+                        Task {
+                            watch,
+                            run: Some(run),
+                            extensions,
+                        },
+                    );
                     confy::store("cue", None, config)?;
                     println!("{} task '{}' saved", CUE.green(), name);
                 }
@@ -337,27 +404,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("{} saved tasks:", CUE.green());
                         for (name, task) in &config.tasks {
                             println!(
-                                "  {} — watch: {:?} | run: \"{}\"",
+                                "  {} — watch: {:?} | extensions: {:?} | run: \"{}\"",
                                 name.cyan(),
                                 task.watch,
-                                task.run
+                                task.extensions,
+                                task.run.as_deref().unwrap_or("none")
                             );
                         }
                     }
                 }
-                TaskAction::Edit { name, watch, run } => {
+                TaskAction::Edit {
+                    name,
+                    watch,
+                    run,
+                    extensions,
+                } => {
                     let task = config.tasks.get_mut(&name).unwrap_or_else(|| {
                         eprintln!("{} task '{}' not found", "Error:".red(), name);
                         process::exit(1);
                     });
                     if let Some(x) = run {
-                        task.run = x;
+                        task.run = Some(x);
+                    }
+                    if let Some(x) = extensions {
+                        task.extensions = Some(x);
                     }
                     if !watch.is_empty() {
                         task.watch = watch;
                     }
                     confy::store("cue", None, config)?;
                     println!("{} task '{}' updated", CUE.green(), name);
+                }
+                TaskAction::Rename { name, new_name } => {
+                    let task = config.tasks.remove(&name).unwrap_or_else(|| {
+                        eprintln!("{} task '{}' not found", "Error:".red(), name);
+                        process::exit(1);
+                    });
+                    config.tasks.insert(new_name.clone(), task);
+                    confy::store("cue", None, config)?;
+                    println!("{} task '{}' renamed to '{}'", CUE.green(), name, new_name);
                 }
             }
         }
@@ -366,17 +451,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             name,
             watch,
             run,
+            extensions,
             debounce,
             global,
             quiet,
             no_clear,
         }) => {
             let config = resolve_config(global, quiet);
-            run_task(&config, name, watch, run, debounce, quiet, no_clear)?;
+            run_task(
+                &config, name, watch, run, extensions, debounce, quiet, no_clear,
+            )?;
         }
 
         None => {
-            if args.watch.is_empty() && args.run.is_none() {
+            if args.watch.is_empty() && args.run.is_none() && args.extensions.is_none() {
                 let config = if args.global {
                     log!(args.quiet, "{} loading global tasks", CUE.green());
                     load_config(true)
@@ -385,7 +473,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     load_config(false)
                 } else {
                     eprintln!(
-                        "{} no 'cue.toml' found - please provide paths with -w and a command to run with -r (or use the -g flag to use global tasks)",
+                        "{} no 'cue.toml' found — use -w/-e and -r to watch directly, or -g for global tasks",
                         "Error:".red()
                     );
                     process::exit(1);
@@ -395,20 +483,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     None,
                     None,
                     None,
+                    None,
                     args.debounce,
                     args.quiet,
                     args.no_clear,
                 )?;
             } else {
-                if args.watch.is_empty() {
-                    eprintln!("{} please provide paths with -w", "Error:".red());
+                if args.watch.is_empty() && args.extensions.is_none() {
+                    eprintln!(
+                        "{} please provide paths with -w or extensions with -e",
+                        "Error:".red()
+                    );
                     process::exit(1);
                 }
                 let run_str = args.run.unwrap_or_else(|| {
                     eprintln!("{} please provide a command with -r", "Error:".red());
                     process::exit(1);
                 });
-                let paths: Vec<&Path> = args.watch.iter().map(|s| Path::new(s)).collect();
+                let watch_strs = resolve_paths(args.watch, args.extensions);
+                let paths: Vec<&Path> = watch_strs.iter().map(|s| Path::new(s)).collect();
                 let command = parse_command(&run_str);
                 validate_paths(&paths, args.quiet);
                 validate_command(&command, args.quiet);
@@ -423,12 +516,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Some(Commands::Init) => {
+        Some(Commands::Init { template }) => {
+            let template: &[u8] = match template {
+    None => b"# optional: runs automatically in zero-config mode\n# default = \"build\"\n\n[tasks.build]\nwatch = [\"src\"]\nrun = \"your command here\"\n",
+    Some(x) => match x.to_lowercase().as_str() {
+        "rust" => b"default = \"run\"\n[tasks.run]\nwatch = [\"src\"]\nextensions = [\"rs\"]\nrun = \"cargo run\"\n[tasks.test]\nwatch = [\"src\", \"tests\"]\nextensions = [\"rs\"]\nrun = \"cargo test\"\n[tasks.build]\nwatch = [\"src\"]\nextensions = [\"rs\"]\nrun = \"cargo build --release\"\n[tasks.check]\nwatch = [\"src\"]\nextensions = [\"rs\"]\nrun = \"cargo check\"\n[tasks.lint]\nwatch = [\"src\"]\nextensions = [\"rs\"]\nrun = \"cargo clippy\"",
+        "node" | "nodejs" => b"default = \"dev\"\n[tasks.dev]\nwatch = [\"src\"]\nextensions = [\"js\", \"ts\"]\nrun = \"node index.js\"\n[tasks.test]\nwatch = [\"src\", \"tests\"]\nextensions = [\"js\", \"ts\"]\nrun = \"npm test\"\n[tasks.build]\nwatch = [\"src\"]\nextensions = [\"ts\"]\nrun = \"tsc\"\n[tasks.lint]\nwatch = [\"src\"]\nextensions = [\"js\", \"ts\"]\nrun = \"eslint src\"\n[tasks.format]\nwatch = [\"src\"]\nextensions = [\"js\", \"ts\"]\nrun = \"prettier --write src\"",
+        "go" => b"default = \"run\"\n[tasks.run]\nwatch = [\".\"]\nextensions = [\"go\"]\nrun = \"go run .\"\n[tasks.test]\nwatch = [\".\"]\nextensions = [\"go\"]\nrun = \"go test ./...\"\n[tasks.build]\nwatch = [\".\"]\nextensions = [\"go\"]\nrun = \"go build -o app .\"\n[tasks.lint]\nwatch = [\".\"]\nextensions = [\"go\"]\nrun = \"golangci-lint run\"\n[tasks.fmt]\nwatch = [\".\"]\nextensions = [\"go\"]\nrun = \"gofmt -w .\"",
+        "c" => b"default = \"build\"\n[tasks.build]\nwatch = [\"src\", \"include\"]\nextensions = [\"c\", \"h\"]\nrun = \"gcc src/*.c -Iinclude -o app\"\n[tasks.run]\nwatch = [\"src\", \"include\"]\nextensions = [\"c\", \"h\"]\nrun = \"make && ./app\"\n[tasks.clean]\nwatch = [\"src\"]\nextensions = [\"c\", \"h\"]\nrun = \"make clean\"",
+        "cpp" => b"default = \"build\"\n[tasks.build]\nwatch = [\"src\", \"include\"]\nextensions = [\"cpp\", \"hpp\", \"h\"]\nrun = \"g++ src/*.cpp -Iinclude -o app\"\n[tasks.run]\nwatch = [\"src\", \"include\"]\nextensions = [\"cpp\", \"hpp\", \"h\"]\nrun = \"make && ./app\"\n[tasks.test]\nwatch = [\"src\", \"tests\"]\nextensions = [\"cpp\", \"hpp\"]\nrun = \"ctest --output-on-failure\"",
+        "ruby" => b"default = \"run\"\n[tasks.run]\nwatch = [\".\"]\nextensions = [\"rb\"]\nrun = \"ruby main.rb\"\n[tasks.test]\nwatch = [\".\"]\nextensions = [\"rb\"]\nrun = \"bundle exec rspec\"\n[tasks.lint]\nwatch = [\".\"]\nextensions = [\"rb\"]\nrun = \"rubocop\"",
+        "php" => b"default = \"run\"\n[tasks.run]\nwatch = [\".\"]\nextensions = [\"php\"]\nrun = \"php index.php\"\n[tasks.test]\nwatch = [\".\"]\nextensions = [\"php\"]\nrun = \"phpunit\"\n[tasks.lint]\nwatch = [\".\"]\nextensions = [\"php\"]\nrun = \"php -l index.php\"",
+        "java" => b"default = \"build\"\n[tasks.build]\nwatch = [\"src\"]\nextensions = [\"java\"]\nrun = \"javac src/*.java -d out\"\n[tasks.run]\nwatch = [\"src\"]\nextensions = [\"java\"]\nrun = \"java -cp out Main\"\n[tasks.test]\nwatch = [\"src\", \"test\"]\nextensions = [\"java\"]\nrun = \"mvn test\"",
+        "kotlin" => b"default = \"run\"\n[tasks.run]\nwatch = [\"src\"]\nextensions = [\"kt\"]\nrun = \"kotlinc src/*.kt -include-runtime -d app.jar && java -jar app.jar\"\n[tasks.test]\nwatch = [\"src\", \"test\"]\nextensions = [\"kt\"]\nrun = \"gradle test\"",
+        "swift" => b"default = \"run\"\n[tasks.run]\nwatch = [\"Sources\"]\nextensions = [\"swift\"]\nrun = \"swift run\"\n[tasks.test]\nwatch = [\"Sources\", \"Tests\"]\nextensions = [\"swift\"]\nrun = \"swift test\"\n[tasks.build]\nwatch = [\"Sources\"]\nextensions = [\"swift\"]\nrun = \"swift build\"",
+        "zig" => b"default = \"run\"\n[tasks.run]\nwatch = [\"src\"]\nextensions = [\"zig\"]\nrun = \"zig run src/main.zig\"\n[tasks.test]\nwatch = [\"src\"]\nextensions = [\"zig\"]\nrun = \"zig test src/main.zig\"\n[tasks.build]\nwatch = [\"src\"]\nextensions = [\"zig\"]\nrun = \"zig build\"",
+        "elixir" => b"default = \"run\"\n[tasks.run]\nwatch = [\"lib\"]\nextensions = [\"ex\", \"exs\"]\nrun = \"mix run\"\n[tasks.test]\nwatch = [\"lib\", \"test\"]\nextensions = [\"ex\", \"exs\"]\nrun = \"mix test\"\n[tasks.compile]\nwatch = [\"lib\"]\nextensions = [\"ex\"]\nrun = \"mix compile\"",
+        "haskell" => b"default = \"run\"\n[tasks.run]\nwatch = [\"src\"]\nextensions = [\"hs\"]\nrun = \"cabal run\"\n[tasks.test]\nwatch = [\"src\", \"test\"]\nextensions = [\"hs\"]\nrun = \"cabal test\"\n[tasks.build]\nwatch = [\"src\"]\nextensions = [\"hs\"]\nrun = \"cabal build\"",
+        "css" | "scss" => b"default = \"build\"\n[tasks.build]\nwatch = [\"src\"]\nextensions = [\"scss\", \"sass\"]\nrun = \"sass src/main.scss dist/style.css\"\n[tasks.watch]\nwatch = [\"src\"]\nextensions = [\"css\", \"scss\"]\nrun = \"sass --watch src:dist\"",
+        "lua" => b"default = \"run\"\n[tasks.run]\nwatch = [\".\"]\nextensions = [\"lua\"]\nrun = \"lua main.lua\"\n[tasks.test]\nwatch = [\".\"]\nextensions = [\"lua\"]\nrun = \"busted\"",
+        "shell" | "sh" => b"default = \"run\"\n[tasks.run]\nwatch = [\".\"]\nextensions = [\"sh\"]\nrun = \"bash main.sh\"\n[tasks.lint]\nwatch = [\".\"]\nextensions = [\"sh\"]\nrun = \"shellcheck *.sh\"",
+        _ => b"# optional: runs automatically in zero-config mode\n# default = \"build\"\n\n[tasks.build]\nwatch = [\"src\"]\nrun = \"your command here\"\n"
+    },
+};
+
             if Path::new("cue.toml").exists() {
                 log!(args.quiet, "{} cue.toml already exists", CUE.green());
             } else {
                 let mut file = File::create("cue.toml")?;
-                file.write_all(b"\"default\" = \"taskname\" \n\n[tasks.taskname]\nwatch = [\"filename.txt\"]\nrun = \"cmd arg -f\"\n")?;
+                file.write_all(template)?;
                 log!(
                     args.quiet,
                     "{} cue.toml created — edit it then run cue",

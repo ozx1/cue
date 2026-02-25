@@ -228,7 +228,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "cue"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "clap",
@@ -243,6 +243,7 @@ dependencies = [
  "shell-words",
  "terminal_size",
  "toml 0.8.23",
+ "walkdir",
  "which",
 ]
 

@@ -1,8 +1,7 @@
+use serial_test::serial;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use serial_test::serial;
-
 
 fn cue() -> Command {
     let mut cmd = Command::new("cargo");
@@ -18,7 +17,6 @@ fn stdout(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
-
 #[test]
 fn test_missing_watch_flag() {
     let output = cue()
@@ -32,10 +30,7 @@ fn test_missing_watch_flag() {
 
 #[test]
 fn test_missing_run_flag() {
-    let output = cue()
-        .args(["-w", "src"])
-        .output()
-        .expect("failed to run");
+    let output = cue().args(["-w", "src"]).output().expect("failed to run");
 
     assert!(!output.status.success());
     assert!(stderr(&output).contains("please provide a command with -r"));
@@ -63,11 +58,18 @@ fn test_command_does_not_exist() {
     assert!(stderr(&output).contains("not found"));
 }
 
-
 #[test]
 fn test_task_add_and_list() {
     let add = cue()
-        .args(["task", "add", "test_task_list", "-w", "src", "-r", "echo hello"])
+        .args([
+            "task",
+            "add",
+            "test_task_list",
+            "-w",
+            "src",
+            "-r",
+            "echo hello",
+        ])
         .output()
         .expect("failed to run");
 
@@ -108,11 +110,18 @@ fn test_task_add_missing_run() {
     assert!(!output.status.success());
 }
 
-
 #[test]
 fn test_task_remove_existing() {
     cue()
-        .args(["task", "add", "test_task_remove", "-w", "src", "-r", "echo hi"])
+        .args([
+            "task",
+            "add",
+            "test_task_remove",
+            "-w",
+            "src",
+            "-r",
+            "echo hi",
+        ])
         .output()
         .expect("failed to run");
 
@@ -136,11 +145,18 @@ fn test_task_remove_not_found() {
     assert!(stderr(&output).contains("not found"));
 }
 
-
 #[test]
 fn test_task_edit_run() {
     cue()
-        .args(["task", "add", "test_task_edit", "-w", "src", "-r", "echo old"])
+        .args([
+            "task",
+            "add",
+            "test_task_edit",
+            "-w",
+            "src",
+            "-r",
+            "echo old",
+        ])
         .output()
         .expect("failed to run");
 
@@ -171,14 +187,19 @@ fn test_task_edit_no_fields() {
 #[test]
 fn test_task_edit_not_found() {
     let output = cue()
-        .args(["task", "edit", "task_that_does_not_exist_xyz", "-r", "echo hi"])
+        .args([
+            "task",
+            "edit",
+            "task_that_does_not_exist_xyz",
+            "-r",
+            "echo hi",
+        ])
         .output()
         .expect("failed to run");
 
     assert!(!output.status.success());
     assert!(stderr(&output).contains("not found"));
 }
-
 
 #[test]
 fn test_task_list_empty_message() {
@@ -189,7 +210,6 @@ fn test_task_list_empty_message() {
 
     assert!(output.status.success());
 }
-
 
 #[test]
 fn test_run_task_not_found() {
@@ -216,16 +236,12 @@ fn test_run_global_flag() {
 #[test]
 #[serial]
 fn test_init_creates_file() {
-
     let existed = Path::new("cue.toml").exists();
     if existed {
         fs::rename("cue.toml", "cue.toml.bak").ok();
     }
 
-    let output = cue()
-        .args(["init"])
-        .output()
-        .expect("failed to run");
+    let output = cue().args(["init"]).output().expect("failed to run");
 
     assert!(output.status.success());
     assert!(Path::new("cue.toml").exists());
@@ -243,17 +259,13 @@ fn test_init_creates_file() {
 fn test_init_already_exists() {
     fs::write("cue.toml", "[tasks]").ok();
 
-    let output = cue()
-        .args(["init"])
-        .output()
-        .expect("failed to run");
+    let output = cue().args(["init"]).output().expect("failed to run");
 
     assert!(output.status.success());
     assert!(stdout(&output).contains("already exists"));
 
     fs::remove_file("cue.toml").ok();
 }
-
 
 #[test]
 #[serial]
@@ -263,9 +275,7 @@ fn test_no_args_no_toml_no_global_flag() {
         fs::rename("cue.toml", "cue.toml.bak").ok();
     }
 
-    let output = cue()
-        .output()
-        .expect("failed to run");
+    let output = cue().output().expect("failed to run");
 
     assert!(!output.status.success());
     assert!(stderr(&output).contains("no 'cue.toml' found"));
@@ -273,4 +283,52 @@ fn test_no_args_no_toml_no_global_flag() {
     if existed {
         fs::rename("cue.toml.bak", "cue.toml").ok();
     }
+}
+
+#[test]
+fn test_task_rename() {
+    cue()
+        .args([
+            "task",
+            "add",
+            "test_task_rename",
+            "-w",
+            "src",
+            "-r",
+            "echo hi",
+        ])
+        .output()
+        .expect("failed to run");
+
+    let rename = cue()
+        .args(["task", "rename", "test_task_rename", "test_task_renamed"])
+        .output()
+        .expect("failed to run");
+
+    assert!(rename.status.success());
+    assert!(stdout(&rename).contains("renamed"));
+
+    let list = cue()
+        .args(["task", "list"])
+        .output()
+        .expect("failed to run");
+
+    assert!(stdout(&list).contains("test_task_renamed"));
+    assert!(!stdout(&list).contains("test_task_rename "));
+
+    cue()
+        .args(["task", "remove", "test_task_renamed"])
+        .output()
+        .expect("failed to run");
+}
+
+#[test]
+fn test_task_rename_not_found() {
+    let output = cue()
+        .args(["task", "rename", "task_that_does_not_exist_xyz", "new_name"])
+        .output()
+        .expect("failed to run");
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("not found"));
 }

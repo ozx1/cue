@@ -1,6 +1,6 @@
 [package]
 name = "cue"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
@@ -18,5 +18,6 @@ which = "8.0.0"
 toml = "0.8"
 dialoguer = "0.12.0"
 serial_test = "3.4.0"
+walkdir = "2.5.0"
 
 
