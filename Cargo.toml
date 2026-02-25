@@ -1,7 +1,12 @@
 [package]
 name = "cue"
 version = "0.3.1"
-edition = "2024"
+description = "A fast, lightweight file watcher that automatically runs your command on every save"
+license = "MIT"
+repository = "https://github.com/ozx1/cue"
+readme = "README.md"
+keywords = ["file-watcher", "watch", "cli", "developer-tools"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 chrono = "0.4.44"
