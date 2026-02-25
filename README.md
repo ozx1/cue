@@ -11,7 +11,7 @@ cue is a lightweight CLI tool that watches your files and automatically runs a c
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Watch Mode](#watch-mode)
-- [Watch file by extensions]()
+- [Watch file by extensions](#watch-file-by-extensions)
 - [Tasks](#tasks)
 - [Local Project Config](#local-project-config)
 - [Debounce](#debounce)
