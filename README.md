@@ -63,6 +63,12 @@ iwr https://raw.githubusercontent.com/ozx1/cue/master/install.ps1 -UseBasicParsi
 cargo install --path .
 ```
 
+**or install via cargo**
+
+```bash
+cargo install cue
+```
+
 ---
 
 ## Quick Start

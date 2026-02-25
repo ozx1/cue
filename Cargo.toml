@@ -2,6 +2,7 @@
 name = "cue"
 version = "0.3.1"
 description = "A fast, lightweight file watcher that automatically runs your command on every save"
+edition = "2024"
 license = "MIT"
 repository = "https://github.com/ozx1/cue"
 readme = "README.md"
