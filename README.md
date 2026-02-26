@@ -27,6 +27,22 @@ A fast, lightweight file watcher that automatically runs your command on every s
 
 ---
 
+## Why Cue? (Features)
+
+- Faster start
+
+- Smart debounce and configurable (no noisy duplicate runs)
+
+- Lightweight memory footprint
+
+- Task system without complexity
+
+- Zero-config mode
+
+See [Benchmarks](#benchmarks)
+
+---
+
 ## Demo
 
 **Initialize a project config**
@@ -139,6 +155,11 @@ cue task add <n> -w <files or dirs> -r "<command>"
 cue run <n>
 ```
 
+\
+You can add tasks with files extensions to watch by `-e` / `--extensions` \
+\
+you must provide `-e` or `-w` or both when adding a task
+
 ### List
 
 ```bash
@@ -194,6 +215,9 @@ cue run test
 | `--global`   | `-g`  | Force global tasks even if `cue.toml` exists |
 | `--quiet`    | `-q`  | Suppress cue's own log output                |
 | `--no-clear` | —     | Don't clear the screen between runs          |
+
+
+
 
 ---
 
@@ -311,16 +335,30 @@ cue --global
 
 Benchmarked against the most popular file watchers (intel i7-9850H)
 
+### versions
+
+- cue: v0.3.2
+- watchexec: v2.5.0
+- chokidar: v3.6.0
+- nodemon: v3.1.14
+
 | Tool      | Startup   | Idle Memory | CPU (idle) | Commands fired (50 changes) |
 | --------- | --------- | ----------- | ---------- | --------------------------- |
 | **cue**   | **219ms** | **7.6 MB**  | **0%**     | 27/50 ¹                     |
-| watchexec | 214ms     | 13.5 MB     | 0%         | 51/50                       |
-| chokidar  | 482ms     | 37.6 MB     | 0%         | 1/50 ²                      |
-| nodemon   | 533ms     | 41.2 MB     | 0%         | 102/50 ³                    |
+| watchexec | 238ms     | 13.5 MB     | 0%         | 51/50                       |
+| chokidar  | 501ms     | 37.6 MB     | 0%         | 1/50 ²                      |
+| nodemon   | 528ms     | 41.2 MB     | 0%         | 102/50 ³                    |
 
-¹ Intentional — cue debounces and kills stale runs, so rapid saves collapse into one clean run per burst. Tune with `-d`.  
+¹ Intentional — cue debounces and kills stale runs, so rapid saves collapse into one clean run per burst. Change with `-d`.  
 ² chokidar's debounce is too aggressive for rapid changes, missing most events.  
 ³ nodemon fires duplicate events per change.
+
+### Why cue stands out?
+
+- Cue keeps memory usage low
+- Cue handles rapid file changes efficiently
+- Cue ensures commands only run once per change
+- Cue’s output stays clean and easy to read
 
 **Run the benchmarks yourself:**
 
