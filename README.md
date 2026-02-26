@@ -29,6 +29,8 @@ A fast, lightweight file watcher that automatically runs your command on every s
 
 ## Why Cue? (Features)
 
+- Watch you file, Stay in flow
+
 - Faster start
 
 - Smart debounce and configurable (no noisy duplicate runs)
@@ -38,6 +40,8 @@ A fast, lightweight file watcher that automatically runs your command on every s
 - Task system without complexity
 
 - Zero-config mode
+
+- Quiet mode so you can just focus on your code
 
 See [Benchmarks](#benchmarks)
 
