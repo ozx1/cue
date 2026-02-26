@@ -309,7 +309,7 @@ cue --global
 
 ## Benchmarks
 
-Benchmarked against the most popular file watchers
+Benchmarked against the most popular file watchers (intel i7-9850H)
 
 | Tool      | Startup   | Idle Memory | CPU (idle) | Commands fired (50 changes) |
 | --------- | --------- | ----------- | ---------- | --------------------------- |
